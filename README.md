@@ -4,123 +4,13 @@ A semantic memory system for [Kivi](https://heykivi.ai), a voice-first dictation
 
 ## Architecture
 
-> 📖 For an in-depth breakdown of each phase, see the full architectural specification in [PIPELINE.md](PIPELINE.md).
-
-### End-to-End Pipeline Diagram
-
-```mermaid
-flowchart TD
-    subgraph Ingestion["1. Ingestion & Storage Pipeline"]
-        A[User Dictation] --> B[Dictionary Correction<br/><i>ASR noise repair & token deduplication</i>]
-        B --> C[(History Log<br/><i>Immutable SQLite archive</i>)]
-        C --> D[LLM Memory Extraction<br/><i>Factual, Episodic, Preference</i>]
-        D --> E[Conflict Resolution<br/><i>Bi-temporal valid_from / valid_to</i>]
-        E --> F[(Structured Memories<br/><i>SQLite</i>)]
-        C & F --> G[(Dual Vector Store<br/><i>Gemini Embeddings</i>)]
-    end
-
-    subgraph Query["2. Query & Routing Pipeline"]
-        H[User Query] --> I[Multi-Turn Contextualizer<br/><i>Rewrites follow-up questions</i>]
-        I --> J{Fast-Path Check?<br/><i>Direct entity query</i>}
-        J -- Yes --> K[lookup_fact]
-        J -- No --> L[LLM Function Router]
-        L --> K
-        L --> M[aggregate]
-        L --> N[get_valid_at]
-        L --> O[update_dictionary]
-        K & M & N -- 0 results fallback --> P[fuzzy_search<br/><i>Semantic + BM25 + Recency</i>]
-    end
-
-    subgraph Synthesis["3. Synthesis & Grounding Pass"]
-        K & M & N & O & P --> Q[Context Formatter<br/><i>Provenance & Timestamps</i>]
-        Q --> R[LLM Answer Generator<br/><i>Grounded response</i>]
-        R --> S{Adversarial Verifier<br/><i>Checks factual claims</i>}
-        S -- Claims Verified --> T[Final Verified Answer + Source Links]
-        S -- Unsupported Claims --> U[Flagged / Abstention]
-    end
+```
+raw ASR → dictionary correction → canonical text (History) → LLM extraction → Memories
+                                                                                  ↓
+User question → LLM function-calling router → deterministic tool → LLM generation → verification → answer
 ```
 
-```
-                              [ User Dictation ]
-                                      │
-                                      ▼
-                        ┌───────────────────────────┐
-                        │ 1. Dictionary Correction  │ (ASR noise repair, deduplication)
-                        └─────────────┬─────────────┘
-                                      │
-                                      ▼
-                        ┌───────────────────────────┐
-                        │ 2. History Storage (SQL)  │ (Immutable dictation archive)
-                        └─────────────┬─────────────┘
-                                      │
-                                      ▼
-                        ┌───────────────────────────┐
-                        │ 3. LLM Memory Extractor   │ (Factual, Episodic, Preference)
-                        └─────────────┬─────────────┘
-                                      │
-                                      ▼
-                        ┌───────────────────────────┐
-                        │ 4. Conflict Resolution    │ (Bi-temporal invalidation / update)
-                        └─────────────┬─────────────┘
-                                      │
-                                      ▼
-                        ┌───────────────────────────┐
-                        │ 5. Dual Vector Store      │ (History & Memory embeddings)
-                        └───────────────────────────┘
-                                      │
-======================================│======================================
-                          QUERY & INFERENCE PIPELINE
-======================================│======================================
-                                      │
-                                [ User Query ]
-                                      │
-                                      ▼
-                        ┌───────────────────────────┐
-                        │ Contextualization Layer   │ (Rewrites follow-up questions)
-                        └─────────────┬─────────────┘
-                                      │
-                                      ▼
-                        ┌───────────────────────────┐
-                        │ Fast-Path Check           │ (Instant bypass for direct facts)
-                        └───────┬───────────┬───────┘
-                                │ Bypass    │ Fallback / Complex
-                                ▼           ▼
-                        ┌──────────┐   ┌───────────────────────────┐
-                        │ Direct   │   │ LLM Function Router       │
-                        │ Lookup   │   └─────────────┬─────────────┘
-                        └────┬─────┘                 │
-                             │   ┌───────────────────┴───────────────────┐
-                             │   │                   │                   │
-                             ▼   ▼                   ▼                   ▼
-                     ┌───────────────┐       ┌───────────────┐   ┌───────────────┐
-                     │ lookup_fact() │       │  aggregate()  │   │ get_valid_at()│
-                     └───────┬───────┘       └───────┬───────┘   └───────┬───────┘
-                             │                       │                   │
-                             └───────────────┬───────┴───────────────────┘
-                                             │ (If 0 results: Fallback)
-                                             ▼
-                                     ┌───────────────┐
-                                     │ fuzzy_search()│ (Semantic + BM25 + Recency)
-                                     └───────┬───────┘
-                                             │
-                                             ▼
-                        ┌───────────────────────────┐
-                        │ Context Formatter         │
-                        └─────────────┬─────────────┘
-                                      │
-                                      ▼
-                        ┌───────────────────────────┐
-                        │ LLM Answer Generator      │ (Drafts persona-aligned response)
-                        └─────────────┬─────────────┘
-                                      │
-                                      ▼
-                        ┌───────────────────────────┐
-                        │ Grounding Verifier Pass   │ (Flags hallucinations / unsupported)
-                        └─────────────┬─────────────┘
-                                      │
-                                      ▼
-                        [ Verified Answer + Provenance Links ]
-```
+> 📖 For the complete architectural specification and pipeline documentation, see [PIPELINE.md](PIPELINE.md).
 
 ### Three-Layer Boundary
 
