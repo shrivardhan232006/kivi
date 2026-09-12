@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>kivi — your memory workspace</title>
+    <meta name="description" content="Voice-first memory assistant for Kivi dictation">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=8">
+</head>
+<body>
+    <div class="app-shell">
+        <!-- Sidebar -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-logo">
+                    <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+                        <rect width="32" height="32" rx="8" fill="#9fe870"/>
+                        <path d="M9 10h4v12H9zM15 14h4v8h-4zM21 12h4v10h-4z" fill="#071309"/>
+                    </svg>
+                </div>
+                <div class="brand-name">kivi</div>
+            </div>
+
+            <div class="nav-items">
+                <button class="nav-item active" data-view="chat" id="nav-chat">
+                    <svg class="nav-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span>Ask</span>
+                </button>
+                <button class="nav-item" data-view="history" id="nav-history">
+                    <svg class="nav-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    <span>History</span>
+                </button>
+
+                <div class="nav-divider"></div>
+
+                <button class="nav-item" data-view="memories" id="nav-memories">
+                    <svg class="nav-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                    </svg>
+                    <span>Memory</span>
+                </button>
+                <button class="nav-item" data-view="dictionary" id="nav-dictionary">
+                    <svg class="nav-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                    </svg>
+                    <span>Dictionary</span>
+                </button>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="user-avatar">K</div>
+                <div class="user-info">
+                    <span class="user-name">kivi workspace</span>
+                    <span class="user-status"><span class="status-dot-inline"></span>local &amp; private</span>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="content">
+            <!-- Ask View (Hero Interactive Screen) -->
+            <section class="view active" id="view-chat">
+                <div class="hero-header">
+                    <div class="hero-header-left">
+                        <h1 class="hero-headline">What can I help you<br>remember?</h1>
+                        <p class="hero-subtitle">Ask about your dictations, people, projects, or preferences.</p>
+                    </div>
+                    <div class="hero-header-right">
+                        <button class="btn-icon-action" id="btn-dict-toggle" onclick="toggleChatDictionary()" title="Manage dictionary entries">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                            </svg>
+                            <span>Dictionary</span>
+                        </button>
+                        <button class="btn-icon-action btn-reset" onclick="clearChat()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                            </svg>
+                            <span>Reset</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Inline Chat Dictionary Drawer/Modal -->
+                <div class="chat-dict-panel hidden" id="chat-dict-panel">
+                    <div class="dict-panel-header">
+                        <div>
+                            <h4>Dictionary &amp; Name Corrections</h4>
+                            <p>Add or change spoken-to-written name replacements</p>
+                        </div>
+                        <button class="dict-panel-close" onclick="toggleChatDictionary()">&times;</button>
+                    </div>
+                    <div class="dict-panel-form">
+                        <input type="text" id="chat-dict-raw" placeholder="When you say (e.g. raman)..." class="dict-input">
+                        <svg class="dict-arrow-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                        <input type="text" id="chat-dict-corrected" placeholder="Kivi writes (e.g. Priya Reddy)..." class="dict-input">
+                        <button class="btn-primary btn-sm" onclick="addChatDictEntry()">Save</button>
+                    </div>
+                    <div class="dict-panel-entries" id="chat-dict-entries">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <div class="hero-grid" id="hero-grid">
+                    <!-- Left Column: Interaction & Dialogue -->
+                    <div class="hero-main-col">
+                        <div class="hero-prompt-card" id="hero-prompt-card">
+                            <textarea id="chat-input" class="hero-textarea" rows="3" placeholder="Find the dictation I did around 5 PM in Slack and polish it for the meeting."></textarea>
+                            <div class="hero-card-footer">
+                                <span class="hero-shortcut-hint">&#8984; K to focus &nbsp;&middot;&nbsp; &#8629; to send</span>
+                                <button class="btn-primary" id="send-btn" onclick="sendQuestion()">
+                                    Ask Kivi
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="hero-suggestions" id="hero-suggestions">
+                            <div class="hero-chips-row">
+                                <button class="hero-chip" onclick="askQuestion(&quot;Who's our Northwind contact?&quot;)">Who's our Northwind contact?</button>
+                                <button class="hero-chip" onclick="askQuestion(&quot;What's true about my desk now?&quot;)">What's true about my desk now?</button>
+                            </div>
+                            <div class="hero-chips-row">
+                                <button class="hero-chip" onclick="askQuestion(&quot;Draft a short update for Cedar&quot;)">Draft a short update for Cedar</button>
+                                <button class="hero-chip" onclick="askQuestion(&quot;What do you know about my holiday?&quot;)">What do you know about my holiday?</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Stats Card -->
+                    <div class="hero-side-col">
+                        <div class="stats-card">
+                            <div class="stats-card-header">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                                </svg>
+                                <h3>your memory</h3>
+                            </div>
+
+                            <div class="stats-row">
+                                <div class="stats-item">
+                                    <div class="stats-big-num" id="stat-memories-count">68</div>
+                                    <div class="stats-sublabel">memories</div>
+                                </div>
+                                <div class="stats-item">
+                                    <div class="stats-mid-num" id="stat-history-count">500</div>
+                                    <div class="stats-sublabel">dictations</div>
+                                </div>
+                            </div>
+
+                            <div class="stats-card-hr"></div>
+
+                            <p class="stats-card-note">Every memory is confidence-scored and traceable back to its original dictation.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Chat Interface (Visible once first question is asked) -->
+                <div class="chat-thread-container hidden" id="chat-thread-container">
+                    <div class="chat-messages" id="chat-messages"></div>
+
+                    <!-- Follow-up prompt card right below the LLM generated answer -->
+                    <div class="chat-followup-card" id="chat-followup-card">
+                        <textarea id="chat-followup-input" class="chat-followup-textarea" rows="2" placeholder="Ask a follow-up or explore another topic..."></textarea>
+                        <div class="followup-card-footer">
+                            <span class="hero-shortcut-hint">&#8629; to send &nbsp;&middot;&nbsp; Shift+&#8629; for new line</span>
+                            <button class="btn-primary" id="send-followup-btn" onclick="sendFollowupQuestion()">
+                                Ask Kivi
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Memories View -->
+            <section class="view" id="view-memories">
+                <div class="view-header">
+                    <h2>Memory</h2>
+                    <p class="view-subtitle">What Kivi has learned from your dictations</p>
+                    <div class="filter-bar">
+                        <button class="filter-chip active" data-kind="all" onclick="filterMemories('all')">All</button>
+                        <button class="filter-chip" data-kind="factual" onclick="filterMemories('factual')">Facts</button>
+                        <button class="filter-chip" data-kind="episodic" onclick="filterMemories('episodic')">Episodes</button>
+                        <button class="filter-chip" data-kind="preference" onclick="filterMemories('preference')">Preferences</button>
+                    </div>
+                </div>
+                <div class="memories-list" id="memories-list"></div>
+            </section>
+
+            <!-- History View -->
+            <section class="view" id="view-history">
+                <div class="view-header">
+                    <h2>History</h2>
+                    <p class="view-subtitle">Your dictation timeline</p>
+                    <div class="filter-bar">
+                        <input type="text" id="history-search" placeholder="Search your words..." class="search-input">
+                        <select id="history-app-filter" class="filter-select" onchange="loadHistory()">
+                            <option value="">All apps</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="history-list" id="history-list"></div>
+                <div class="pagination" id="history-pagination"></div>
+            </section>
+
+            <!-- Dictionary View -->
+            <section class="view" id="view-dictionary">
+                <div class="view-header">
+                    <h2>Dictionary</h2>
+                    <p class="view-subtitle">Words Kivi never misspells</p>
+                </div>
+                <div class="dictionary-add" id="dictionary-add">
+                    <input type="text" id="dict-raw" placeholder="you say..." class="dict-input">
+                    <svg class="dict-arrow-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                    <input type="text" id="dict-corrected" placeholder="kivi writes..." class="dict-input">
+                    <button class="btn-primary" onclick="addDictEntry()">+ Add</button>
+                </div>
+                <div class="suggestions-section" id="suggestions-section"></div>
+                <div class="dictionary-list" id="dictionary-list"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/app.js?v=8"></script>
+</body>
+</html>

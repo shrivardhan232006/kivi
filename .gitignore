@@ -1,0 +1,12 @@
+.env
+data/*.db
+data/*.db-shm
+data/*.db-wal
+*.db
+*.db-shm
+*.db-wal
+__pycache__/
+*.pyc
+eval/results/*.json
+.DS_Store
+
