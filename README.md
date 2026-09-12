@@ -4,17 +4,129 @@ A semantic memory system for [Kivi](https://heykivi.ai), a voice-first dictation
 
 ## Architecture
 
+> 📖 For an in-depth breakdown of each phase, see the full architectural specification in [PIPELINE.md](PIPELINE.md).
+
+### End-to-End Pipeline Diagram
+
+```mermaid
+flowchart TD
+    subgraph Ingestion["1. Ingestion & Storage Pipeline"]
+        A[User Dictation] --> B[Dictionary Correction<br/><i>ASR noise repair & token deduplication</i>]
+        B --> C[(History Log<br/><i>Immutable SQLite archive</i>)]
+        C --> D[LLM Memory Extraction<br/><i>Factual, Episodic, Preference</i>]
+        D --> E[Conflict Resolution<br/><i>Bi-temporal valid_from / valid_to</i>]
+        E --> F[(Structured Memories<br/><i>SQLite</i>)]
+        C & F --> G[(Dual Vector Store<br/><i>Gemini Embeddings</i>)]
+    end
+
+    subgraph Query["2. Query & Routing Pipeline"]
+        H[User Query] --> I[Multi-Turn Contextualizer<br/><i>Rewrites follow-up questions</i>]
+        I --> J{Fast-Path Check?<br/><i>Direct entity query</i>}
+        J -- Yes --> K[lookup_fact]
+        J -- No --> L[LLM Function Router]
+        L --> K
+        L --> M[aggregate]
+        L --> N[get_valid_at]
+        L --> O[update_dictionary]
+        K & M & N -- 0 results fallback --> P[fuzzy_search<br/><i>Semantic + BM25 + Recency</i>]
+    end
+
+    subgraph Synthesis["3. Synthesis & Grounding Pass"]
+        K & M & N & O & P --> Q[Context Formatter<br/><i>Provenance & Timestamps</i>]
+        Q --> R[LLM Answer Generator<br/><i>Grounded response</i>]
+        R --> S{Adversarial Verifier<br/><i>Checks factual claims</i>}
+        S -- Claims Verified --> T[Final Verified Answer + Source Links]
+        S -- Unsupported Claims --> U[Flagged / Abstention]
+    end
 ```
-raw ASR → dictionary correction → canonical text (History) → LLM extraction → Memories
-                                                                                  ↓
-User question → LLM function-calling router → deterministic tool → LLM generation → verification → answer
+
+```
+                              [ User Dictation ]
+                                      │
+                                      ▼
+                        ┌───────────────────────────┐
+                        │ 1. Dictionary Correction  │ (ASR noise repair, deduplication)
+                        └─────────────┬─────────────┘
+                                      │
+                                      ▼
+                        ┌───────────────────────────┐
+                        │ 2. History Storage (SQL)  │ (Immutable dictation archive)
+                        └─────────────┬─────────────┘
+                                      │
+                                      ▼
+                        ┌───────────────────────────┐
+                        │ 3. LLM Memory Extractor   │ (Factual, Episodic, Preference)
+                        └─────────────┬─────────────┘
+                                      │
+                                      ▼
+                        ┌───────────────────────────┐
+                        │ 4. Conflict Resolution    │ (Bi-temporal invalidation / update)
+                        └─────────────┬─────────────┘
+                                      │
+                                      ▼
+                        ┌───────────────────────────┐
+                        │ 5. Dual Vector Store      │ (History & Memory embeddings)
+                        └───────────────────────────┘
+                                      │
+======================================│======================================
+                          QUERY & INFERENCE PIPELINE
+======================================│======================================
+                                      │
+                                [ User Query ]
+                                      │
+                                      ▼
+                        ┌───────────────────────────┐
+                        │ Contextualization Layer   │ (Rewrites follow-up questions)
+                        └─────────────┬─────────────┘
+                                      │
+                                      ▼
+                        ┌───────────────────────────┐
+                        │ Fast-Path Check           │ (Instant bypass for direct facts)
+                        └───────┬───────────┬───────┘
+                                │ Bypass    │ Fallback / Complex
+                                ▼           ▼
+                        ┌──────────┐   ┌───────────────────────────┐
+                        │ Direct   │   │ LLM Function Router       │
+                        │ Lookup   │   └─────────────┬─────────────┘
+                        └────┬─────┘                 │
+                             │   ┌───────────────────┴───────────────────┐
+                             │   │                   │                   │
+                             ▼   ▼                   ▼                   ▼
+                     ┌───────────────┐       ┌───────────────┐   ┌───────────────┐
+                     │ lookup_fact() │       │  aggregate()  │   │ get_valid_at()│
+                     └───────┬───────┘       └───────┬───────┘   └───────┬───────┘
+                             │                       │                   │
+                             └───────────────┬───────┴───────────────────┘
+                                             │ (If 0 results: Fallback)
+                                             ▼
+                                     ┌───────────────┐
+                                     │ fuzzy_search()│ (Semantic + BM25 + Recency)
+                                     └───────┬───────┘
+                                             │
+                                             ▼
+                        ┌───────────────────────────┐
+                        │ Context Formatter         │
+                        └─────────────┬─────────────┘
+                                      │
+                                      ▼
+                        ┌───────────────────────────┐
+                        │ LLM Answer Generator      │ (Drafts persona-aligned response)
+                        └─────────────┬─────────────┘
+                                      │
+                                      ▼
+                        ┌───────────────────────────┐
+                        │ Grounding Verifier Pass   │ (Flags hallucinations / unsupported)
+                        └─────────────┬─────────────┘
+                                      │
+                                      ▼
+                        [ Verified Answer + Provenance Links ]
 ```
 
 ### Three-Layer Boundary
 
 | Layer | Nature | Job |
 |-------|--------|-----|
-| **Dictionary** | Deterministic | Exact term corrections (ASR misspellings) |
+| **Dictionary** | Deterministic | Exact term corrections (ASR misspellings & name replacements) |
 | **History** | Raw log, immutable | Permanent record of what was said |
 | **Semantic Memory** | LLM-extracted, confidence-scored | Structured understanding derived from History |
 
@@ -28,25 +140,26 @@ When a fact changes, the old record is marked `valid_to` rather than deleted —
 
 ### Query Router
 
-Uses Gemini's native **function-calling API** to route questions to four deterministic tools:
+Uses Gemini's native **function-calling API** to route questions to five deterministic tools:
 
 | Tool | Implementation | Use Case |
 |------|---------------|----------|
-| `lookup_fact(subject, predicate)` | SQL exact lookup | "Who is Devon Marsh?" |
-| `aggregate(filter_field, filter_value)` | `SELECT DISTINCT` | "List everyone I talk to on Slack" |
-| `fuzzy_search(query, top_k)` | Semantic + BM25 + recency fusion | "Did I talk to Priya about the onboarding flow?" |
-| `get_valid_at(subject, predicate, timestamp)` | Bi-temporal SQL | "What was Atlas called before?" |
+| `lookup_fact(subject, predicate)` | SQL exact lookup + rename/alias resolution | "Who is Devon Marsh?", "Who's our Northwind contact?" |
+| `aggregate(filter_field, filter_value)` | Case-insensitive `SELECT DISTINCT` | "List everyone I talk to on Slack" |
+| `fuzzy_search(query, top_k)` | Semantic + BM25 + timeline recency fusion | "Did I talk to Priya about the onboarding flow?" |
+| `get_valid_at(subject, predicate, timestamp)` | Bi-temporal SQL | "What was Atlas called before?", "Where do I sit now?" |
+| `update_dictionary(raw_form, corrected_form)` | Dynamic dictionary & memory updater | "Its Priya Reddy not raman" |
 
 **Key invariant**: Tools are SQL-backed and deterministic. The LLM decides *which* tool and *what arguments* — never executes retrieval itself. `aggregate` always runs `SELECT DISTINCT`, never similarity ranking.
 
-**Fast-path bypass**: If the question contains an exact entity name from memory, `lookup_fact` is called directly without an LLM routing call.
+**Fast-path bypass**: If the question is a direct factual lookup for an exact entity name from memory, `lookup_fact` is called directly without an LLM routing call.
 
 ### Retrieval Signals (fuzzy_search)
 
 Three signals fused with configurable weights:
-1. **Semantic similarity** (cosine, 0.45) — paraphrase matching via `gemini-embedding-001`
+1. **Semantic similarity** (cosine, 0.45) — paraphrase matching via embeddings
 2. **Lexical precision** (BM25, 0.35) — exact names, jargon, ASR-garbled entities
-3. **Temporal recency** (exponential decay, 0.20) — half-life 7 days
+3. **Temporal recency** (exponential decay, 0.20) — timeline-anchored decay (half-life 7 days)
 
 ### Verification Pass
 
@@ -56,9 +169,9 @@ Every generated answer goes through a grounding check: an LLM verifies that each
 
 | Role | Model | Rationale |
 |------|-------|-----------|
-| Extraction, Verification, Routing | `gemini-2.5-flash` | High volume, simple tasks, cheapest |
-| Answer Generation | `gemini-2.5-pro` | User-facing quality |
-| Embeddings | `gemini-embedding-001` | GA, text-only |
+| Extraction, Verification, Routing | `gemini-3.5-flash-lite` | High volume, fast latency, lowest cost |
+| Answer Generation | `gemini-3.5-flash-lite` | Context-grounded synthesis |
+| Embeddings | `gemini-embedding-2` | Multilingual, semantic vector representations |
 
 All configurable via `.env`. Temperature: 0.1 for extraction/verification, 0.2 for generation.
 
